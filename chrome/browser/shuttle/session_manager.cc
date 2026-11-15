@@ -630,9 +630,19 @@ void SessionManager::SelectTab(content::WebContents* contents) {
       continue;
     }
     ui::BaseWindow* window = browser->GetWindow();
-    if (index != tab_strip->active_index() && !(window && window->IsActive())) {
-      tab_strip->ActivateTabAt(index);
+    if (index == tab_strip->active_index() || (window && window->IsActive())) {
+      return;
     }
+    // Never pull the visible tab away from another session's tab: the user
+    // may be watching it while typing in another app (the window is then not
+    // active). Only a tab the user owns, or one of the same session, is
+    // replaced.
+    content::WebContents* visible = tab_strip->GetActiveWebContents();
+    std::string visible_session = visible ? SessionOf(visible) : std::string();
+    if (!visible_session.empty() && visible_session != SessionOf(contents)) {
+      return;
+    }
+    tab_strip->ActivateTabAt(index);
     return;
   }
 }
