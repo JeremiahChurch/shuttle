@@ -7,13 +7,18 @@
 #include <algorithm>
 #include <map>
 #include <optional>
+#include <set>
+#include <string>
 #include <utility>
+#include <vector>
 
 #include "base/base64.h"
 #include "base/functional/bind.h"
 #include "base/functional/callback.h"
 #include "base/json/json_writer.h"
 #include "base/i18n/time_formatting.h"
+#include "base/barrier_closure.h"
+#include "base/strings/pattern.h"
 #include "base/strings/strcat.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/string_util.h"
@@ -152,6 +157,19 @@ std::optional<gfx::Size> GetViewport(const base::DictValue& args,
 
 // Agents --------------------------------------------------------------------
 
+// When the agent was last used: the latest of its recorded activity and its
+// open sessions' activity (never earlier than its creation).
+base::Time LastActiveOf(const ToolContext& context,
+                        const ProfileRegistry::Entry& entry) {
+  base::Time latest = std::max(entry.created, entry.last_active);
+  for (const Session* session : context.service->sessions().List()) {
+    if (session->agent == entry.id) {
+      latest = std::max(latest, session->last_activity);
+    }
+  }
+  return latest;
+}
+
 // `avatar_data`: inline uploaded avatars (chrome://agents shows them).
 base::DictValue DescribeAgent(const ToolContext& context,
                               const ProfileRegistry::Entry& entry,
@@ -162,7 +180,10 @@ base::DictValue DescribeAgent(const ToolContext& context,
           .Set("name", entry.name)
           .Set("color", ProfileRegistry::ColorName(entry.color))
           .Set("persistSessionCookies", entry.persist_session_cookies)
-          .Set("createdAt", base::TimeFormatAsIso8601(entry.created));
+          .Set("createdAt", base::TimeFormatAsIso8601(entry.created))
+          .Set("lastActiveAt",
+               base::TimeFormatAsIso8601(LastActiveOf(context, entry)))
+          .Set("keep", entry.keep);
   if (entry.throwaway) {
     dict.Set("throwaway", true);
     dict.Set("idleMinutes", static_cast<int>(entry.idle_timeout.InMinutes()));
@@ -220,6 +241,13 @@ bool GetIdentity(const base::DictValue& args,
     }
     identity->persist_session_cookies = persist->GetBool();
   }
+  if (const base::Value* keep = args.Find("keep")) {
+    if (!keep->is_bool()) {
+      *error = "keep must be a boolean";
+      return false;
+    }
+    identity->keep = keep->GetBool();
+  }
   if (const base::Value* idle = args.Find("idleMinutes")) {
     if (!idle->is_int() || idle->GetInt() < 1 ||
         idle->GetInt() > kMaxThrowawayIdleMinutes) {
@@ -241,6 +269,9 @@ std::string CheckThrowawayIdentity(const ProfileRegistry::Identity& identity,
   if (throwaway && identity.persist_session_cookies) {
     return "Throwaway agents keep nothing on disk: persistSessionCookies "
            "doesn't apply";
+  }
+  if (throwaway && identity.keep) {
+    return "Throwaway agents delete themselves: keep doesn't apply";
   }
   if (!throwaway && identity.idle_timeout) {
     return "idleMinutes is for throwaway agents only";
@@ -386,6 +417,93 @@ void DeleteAgent(const ToolContext& context,
                      base::DictValue().Set("id", id).Set("deleted", true))));
                },
                *id, std::move(callback)));
+}
+
+// delete-idle-agents: persistent agents with no open session and no activity
+// for `olderThanDays` days, except agents marked keep and ids or names
+// matching an `exclude` pattern (`*` and `?`). dryRun only lists them.
+void DeleteIdleAgents(const ToolContext& context,
+                      const base::DictValue& args,
+                      ToolCallback callback) {
+  std::optional<int> days = args.FindInt("olderThanDays");
+  if (!days || *days < 1 || *days > 3650) {
+    std::move(callback).Run(
+        ToolResult::Error("olderThanDays must be an integer from 1 to 3650"));
+    return;
+  }
+  std::vector<std::string> exclude;
+  if (const base::Value* value = args.Find("exclude")) {
+    const base::ListValue* list = value->GetIfList();
+    if (!list) {
+      std::move(callback).Run(
+          ToolResult::Error("exclude must be an array of patterns"));
+      return;
+    }
+    for (const base::Value& pattern : *list) {
+      if (!pattern.is_string()) {
+        std::move(callback).Run(
+            ToolResult::Error("exclude must be an array of patterns"));
+        return;
+      }
+      exclude.push_back(pattern.GetString());
+    }
+  }
+  const bool dry_run = args.FindBool("dryRun").value_or(false);
+  const base::Time cutoff = base::Time::Now() - base::Days(*days);
+
+  std::set<std::string> with_sessions;
+  for (const Session* session : context.service->sessions().List()) {
+    with_sessions.insert(session->agent);
+  }
+  base::ListValue matched;
+  std::vector<std::string> ids;
+  for (const ProfileRegistry::Entry& entry :
+       context.service->profiles().List()) {
+    if (entry.throwaway || entry.keep || with_sessions.contains(entry.id)) {
+      continue;
+    }
+    base::Time last_active = LastActiveOf(context, entry);
+    if (last_active >= cutoff) {
+      continue;
+    }
+    bool excluded = false;
+    for (const std::string& pattern : exclude) {
+      if (base::MatchPattern(entry.id, pattern) ||
+          base::MatchPattern(entry.name, pattern)) {
+        excluded = true;
+        break;
+      }
+    }
+    if (excluded) {
+      continue;
+    }
+    ids.push_back(entry.id);
+    matched.Append(base::DictValue()
+                       .Set("id", entry.id)
+                       .Set("name", entry.name)
+                       .Set("lastActiveAt",
+                            base::TimeFormatAsIso8601(last_active)));
+  }
+  base::DictValue result;
+  result.Set("agents", std::move(matched));
+  result.Set("dryRun", dry_run);
+  if (dry_run || ids.empty()) {
+    result.Set("deleted", 0);
+    std::move(callback).Run(ToolResult::Json(base::Value(std::move(result))));
+    return;
+  }
+  result.Set("deleted", static_cast<int>(ids.size()));
+  auto done = base::BarrierClosure(
+      ids.size(),
+      base::BindOnce(
+          [](base::DictValue result, ToolCallback callback) {
+            std::move(callback).Run(
+                ToolResult::Json(base::Value(std::move(result))));
+          },
+          std::move(result), std::move(callback)));
+  for (const std::string& id : ids) {
+    context.service->DeleteAgent(id, done);
+  }
 }
 
 // Sessions ------------------------------------------------------------------
@@ -706,6 +824,7 @@ constexpr char kCreateAgentArgs[] = R"({"type":"object","properties":{
   "name":{"type":"string","description":"Friendly name, shown on the agent's tabs (max 64 chars; default: the id)."},
   "color":{"type":"string","enum":["grey","blue","red","yellow","green","pink","purple","cyan","orange"],"description":"Color of the agent's tabs (default: picked from the id)."},
   "avatar":{"type":"string","description":"Optional image: https: or data:image/ URL (max 256 KB); empty removes it."},
+  "keep":{"type":"boolean","description":"Never delete this agent in bulk (delete-idle-agents, the cleanup on chrome://agents). Set it on agents that hold a real login."},
   "persistSessionCookies":{"type":"boolean","description":"Keep session cookies (no expiry) across browser restarts, like Chrome's \"Continue where you left off\" (default true). A change applies at the next browser start."}}})";
 
 constexpr char kUpdateAgentArgs[] = R"({"type":"object","properties":{
@@ -713,6 +832,7 @@ constexpr char kUpdateAgentArgs[] = R"({"type":"object","properties":{
   "name":{"type":"string","description":"Friendly name, shown on the agent's tabs (max 64 chars; default: the id)."},
   "color":{"type":"string","enum":["grey","blue","red","yellow","green","pink","purple","cyan","orange"],"description":"Color of the agent's tabs (default: picked from the id)."},
   "avatar":{"type":"string","description":"Optional image: https: or data:image/ URL (max 256 KB); empty removes it."},
+  "keep":{"type":"boolean","description":"Never delete this agent in bulk (delete-idle-agents, the cleanup on chrome://agents). Set it on agents that hold a real login."},
   "persistSessionCookies":{"type":"boolean","description":"Keep session cookies (no expiry) across browser restarts, like Chrome's \"Continue where you left off\" (default true). A change applies at the next browser start."},
   "idleMinutes":{"type":"integer","description":"Throwaway agents only: delete after this many minutes without activity (1-1440)."}},
   "required":["id"]})";
@@ -756,12 +876,19 @@ constexpr char kCaptureArgs[] = R"({"type":"object","properties":{
   "format":{"type":"string","enum":["jpeg","png"],"description":"Default jpeg."}},
   "required":["targetId"]})";
 
+constexpr char kDeleteIdleAgentsArgs[] = R"({"type":"object","properties":{
+  "olderThanDays":{"type":"integer","description":"Delete agents unused for at least this many days (1-3650)."},
+  "exclude":{"type":"array","items":{"type":"string"},"description":"Agent ids or names to keep, with * and ? wildcards, e.g. [\"agent-google-*\"]."},
+  "dryRun":{"type":"boolean","description":"Only list what would be deleted."}},
+  "required":["olderThanDays"]})";
+
 constexpr char kListAgentsArgs[] = R"({"type":"object","properties":{
   "avatarData":{"type":"boolean","description":"Include uploaded avatar images (large; default: summarized)."}}})";
 
 constexpr Tool kTools[] = {
     {"list-agents",
      "List agents: identity (name, color, avatar), persistSessionCookies, "
+     "keep, lastActiveAt, "
      "open sessions and tabs; throwaway agents with idleMinutes and "
      "expiresAt.",
      kListAgentsArgs, &ListAgents},
@@ -779,6 +906,12 @@ constexpr Tool kTools[] = {
     {"delete-agent",
      "Close the agent's sessions and tabs and wipe its storage.",
      kAgentIdArgs, &DeleteAgent},
+    {"delete-idle-agents",
+     "Delete persistent agents with no open session and no activity for "
+     "olderThanDays days, wiping their storage. Never deletes agents marked "
+     "keep (update-agent keep: true) or matching exclude. Use dryRun first "
+     "to see the list. Throwaway agents already delete themselves.",
+     kDeleteIdleAgentsArgs, &DeleteIdleAgents},
     {"open-session",
      "Start working as an agent. Returns a sessionId and cdpEndpoint; tabs "
      "you allocate are grouped under the agent's name and color. "

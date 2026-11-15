@@ -21,6 +21,16 @@ export interface Agent {
   expiresAt?: string;
   sessions: number;
   tabs: number;
+  // Last use: the latest session activity or its creation.
+  lastActiveAt?: string;
+  // Never removed by the bulk cleanup.
+  keep?: boolean;
+}
+
+export interface IdleAgent {
+  id: string;
+  name: string;
+  lastActiveAt: string;
 }
 
 export interface AgentTab {
@@ -41,6 +51,7 @@ export interface AgentIdentity {
   color?: string;
   avatar?: string;
   persistSessionCookies?: boolean;
+  keep?: boolean;
 }
 
 // The page runs the same MCP tools agents use (list-agents, create-agent,
@@ -51,6 +62,10 @@ export interface BrowserProxy {
   createAgent(id: string, identity: AgentIdentity): Promise<Agent>;
   updateAgent(id: string, identity: AgentIdentity): Promise<Agent>;
   deleteAgent(id: string): Promise<void>;
+  // Persistent agents with no session and no activity for `days` days, minus
+  // agents marked keep. dryRun lists them without deleting.
+  deleteIdleAgents(days: number, dryRun: boolean):
+      Promise<{agents: IdleAgent[], deleted: number}>;
   closeSession(sessionId: string): Promise<void>;
   openTab(agentId: string, url: string): Promise<void>;
   showTab(targetId: string): Promise<void>;
@@ -83,6 +98,11 @@ export class BrowserProxyImpl implements BrowserProxy {
 
   deleteAgent(id: string) {
     return this.callTool_<void>('delete-agent', {id});
+  }
+
+  deleteIdleAgents(days: number, dryRun: boolean) {
+    return this.callTool_<{agents: IdleAgent[], deleted: number}>(
+        'delete-idle-agents', {olderThanDays: days, dryRun});
   }
 
   closeSession(sessionId: string) {

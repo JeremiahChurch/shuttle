@@ -19,7 +19,7 @@ import {CrLitElement} from 'chrome://resources/lit/v3_0/lit.rollup.js';
 
 import {getCss} from './app.css.js';
 import {getHtml} from './app.html.js';
-import type {Agent, AgentIdentity, BrowserProxy, Session} from './browser_proxy.js';
+import type {Agent, AgentIdentity, BrowserProxy, IdleAgent, Session} from './browser_proxy.js';
 import {AGENT_COLORS, BrowserProxyImpl} from './browser_proxy.js';
 
 // Avatar images from files: edge length in px, and the browser's size limit.
@@ -32,6 +32,7 @@ const REFRESH_MS = 2000;
 // Quick start: the user's open/closed choice (otherwise open while there are
 // no agents).
 const QUICK_START_KEY = 'quickStart';
+const SORT_KEY = 'agentSort';
 const DEFAULT_MCP_URL = 'http://127.0.0.1:9222/mcp';
 
 export const EXAMPLE_PROMPT = 'Use the Shuttle browser (MCP server "shuttle"): ' +
@@ -52,6 +53,7 @@ export interface EditState {
   persistSessionCookies: boolean;
   // Throwaway agents have no avatar and keep nothing on disk.
   throwaway: boolean;
+  keep: boolean;
 }
 
 export interface AgentsAppElement {
@@ -60,6 +62,7 @@ export interface AgentsAppElement {
     editDialog: CrDialogElement,
     menu: CrActionMenuElement,
     openDialog: CrDialogElement,
+    cleanupDialog: CrDialogElement,
   };
 }
 
@@ -89,6 +92,10 @@ export class AgentsAppElement extends CrLitElement {
       openUrl_: {type: String},
       openError_: {type: String},
       deleteAgent_: {type: Object},
+      sort_: {type: String},
+      cleanupDays_: {type: Number},
+      cleanupAgents_: {type: Array},
+      cleanupError_: {type: String},
       mcpUrl_: {type: String},
       quickStartChoice_: {type: String},
       copied_: {type: String},
@@ -106,6 +113,12 @@ export class AgentsAppElement extends CrLitElement {
   protected accessor openUrl_: string = '';
   protected accessor openError_: string = '';
   protected accessor deleteAgent_: Agent|null = null;
+  // 'name' or 'recent' (most recently active first).
+  protected accessor sort_: string =
+      window.localStorage.getItem(SORT_KEY) || 'name';
+  protected accessor cleanupDays_: number = 14;
+  protected accessor cleanupAgents_: IdleAgent[]|null = null;
+  protected accessor cleanupError_: string = '';
   protected accessor mcpUrl_: string = DEFAULT_MCP_URL;
   // 'open', 'closed' or '' (automatic).
   protected accessor quickStartChoice_: string =
@@ -227,11 +240,34 @@ export class AgentsAppElement extends CrLitElement {
 
   protected visibleAgents_(): Agent[] {
     const query = this.search_.trim().toLowerCase();
-    if (!query) {
-      return this.agents_;
-    }
-    return this.agents_.filter(
+    const agents = !query ? this.agents_ : this.agents_.filter(
         a => a.name.toLowerCase().includes(query) || a.id.includes(query));
+    const sorted = [...agents];
+    if (this.sort_ === 'recent') {
+      const time = (a: Agent) =>
+          a.lastActiveAt ? new Date(a.lastActiveAt).getTime() : 0;
+      sorted.sort((a, b) => time(b) - time(a));
+    } else {
+      sorted.sort((a, b) => a.name.localeCompare(b.name));
+    }
+    return sorted;
+  }
+
+  protected onSortChange_(e: Event) {
+    this.sort_ = (e.target as HTMLSelectElement).value;
+    try {
+      window.localStorage.setItem(SORT_KEY, this.sort_);
+    } catch {
+      // Not remembered.
+    }
+  }
+
+  protected lastActiveText_(agent: Agent): string {
+    if (agent.sessions > 0) {
+      return 'Active now';
+    }
+    return agent.lastActiveAt ? `Last active ${this.since_(agent.lastActiveAt)}` :
+                                '';
   }
 
   protected sessionsOf_(agent: Agent): Session[] {
@@ -296,6 +332,7 @@ export class AgentsAppElement extends CrLitElement {
       avatar: '',
       persistSessionCookies: true,
       throwaway: false,
+      keep: false,
     });
   }
 
@@ -316,6 +353,7 @@ export class AgentsAppElement extends CrLitElement {
         avatar: agent.avatar || '',
         persistSessionCookies: agent.persistSessionCookies !== false,
         throwaway: !!agent.throwaway,
+        keep: !!agent.keep,
       });
     }
   }
@@ -429,6 +467,12 @@ export class AgentsAppElement extends CrLitElement {
     }
   }
 
+  protected onKeepChange_(e: CustomEvent<boolean>) {
+    if (this.edit_) {
+      this.edit_ = {...this.edit_, keep: e.detail};
+    }
+  }
+
   private slug_(name: string): string {
     return name.toLowerCase()
         .normalize('NFKD')
@@ -459,10 +503,12 @@ export class AgentsAppElement extends CrLitElement {
       color: edit.color,
       avatar: edit.avatar.trim(),
       persistSessionCookies: edit.persistSessionCookies,
+      keep: edit.keep,
     };
     if (edit.throwaway) {
       delete identity.avatar;
       delete identity.persistSessionCookies;
+      delete identity.keep;
     }
     try {
       if (edit.id) {
@@ -487,6 +533,47 @@ export class AgentsAppElement extends CrLitElement {
     }
     this.$.editDialog.close();
     await this.refresh_();
+  }
+
+  // Cleanup of idle agents ---------------------------------------------------
+
+  protected async onCleanupClick_() {
+    this.cleanupAgents_ = null;
+    this.cleanupError_ = '';
+    await this.updateComplete;
+    this.$.cleanupDialog.showModal();
+    await this.previewCleanup_();
+  }
+
+  protected async previewCleanup_() {
+    this.cleanupAgents_ = null;
+    this.cleanupError_ = '';
+    try {
+      const result = await this.browserProxy_.deleteIdleAgents(
+          this.cleanupDays_, /*dryRun=*/ true);
+      this.cleanupAgents_ = result.agents;
+    } catch (e) {
+      this.cleanupError_ = String(e);
+    }
+  }
+
+  protected onCleanupDaysChange_(e: Event) {
+    const days = Math.floor(Number((e.target as HTMLInputElement).value));
+    if (days >= 1 && days <= 3650) {
+      this.cleanupDays_ = days;
+      this.previewCleanup_();
+    }
+  }
+
+  protected onCleanupCancelClick_() {
+    this.$.cleanupDialog.cancel();
+  }
+
+  protected onCleanupConfirmClick_() {
+    // Deletes what the list showed, as of now (agents keep their protection).
+    this.$.cleanupDialog.close();
+    this.act_(this.browserProxy_.deleteIdleAgents(
+        this.cleanupDays_, /*dryRun=*/ false));
   }
 
   // Delete -----------------------------------------------------------------

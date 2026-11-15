@@ -372,3 +372,27 @@ cr-dialog [slot=body] {
   outline: 2px solid var(--cr-focus-outline-color);
   outline-offset: 4px;
 }
+
+#sort {
+  margin-inline-end: 8px;
+  background: transparent;
+  color: inherit;
+  border: 1px solid var(--cr-separator-color, #8884);
+  border-radius: 4px;
+  padding: 4px 8px;
+}
+
+#cleanup {
+  margin-inline-end: 8px;
+}
+
+#cleanupDays {
+  width: 4em;
+}
+
+#cleanupList {
+  max-height: 240px;
+  overflow-y: auto;
+  margin: 0;
+  padding-inline-start: 20px;
+}

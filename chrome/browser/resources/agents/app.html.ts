@@ -11,6 +11,16 @@ export function getHtml(this: AgentsAppElement) {
 <cr-toolbar id="toolbar" page-name="Agents" search-prompt="Search agents"
     clear-label="Clear search" menu-label="" autofocus
     @search-changed="${this.onSearchChanged_}">
+  <select id="sort" aria-label="Sort agents" @change="${this.onSortChange_}">
+    <option value="name" ?selected="${this.sort_ === 'name'}">Sort: Name
+    </option>
+    <option value="recent" ?selected="${this.sort_ === 'recent'}">
+      Sort: Recent</option>
+  </select>
+  <cr-button id="cleanup" @click="${this.onCleanupClick_}"
+      title="Delete agents nobody has used for a while">
+    Clean up
+  </cr-button>
   <cr-button id="create" class="action-button" @click="${this.onCreateClick_}">
     New agent
   </cr-button>
@@ -110,6 +120,10 @@ export function getHtml(this: AgentsAppElement) {
               ${agent.id} · ${this.plural_(agent.sessions, 'session')} ·
               ${this.plural_(agent.tabs, 'tab')}
             </div>
+            ${agent.throwaway ? nothing : html`
+              <div class="secondary last-active">
+                ${this.lastActiveText_(agent)}${agent.keep ? ' · Kept' : ''}
+              </div>`}
           </div>
           <cr-button class="open-tab" data-agent="${agent.id}"
               @click="${this.onOpenTabClick_}"
@@ -224,6 +238,17 @@ export function getHtml(this: AgentsAppElement) {
           ?checked="${this.edit_?.persistSessionCookies ?? true}"
           @change="${this.onPersistSessionCookiesChange_}">
       </cr-toggle>
+    </div>
+    <div class="toggle-row">
+      <div class="text">
+        <div id="keepLabel">Keep this agent</div>
+        <div class="secondary">Never removed by Clean up. Turn on for agents
+            that hold a real login.</div>
+      </div>
+      <cr-toggle id="keepToggle" aria-labelledby="keepLabel"
+          ?checked="${this.edit_?.keep ?? false}"
+          @change="${this.onKeepChange_}">
+      </cr-toggle>
     </div>` : nothing}
   </div>
   <div slot="button-container">
@@ -278,6 +303,43 @@ export function getHtml(this: AgentsAppElement) {
     <cr-button class="action-button" id="deleteConfirm"
         @click="${this.onDeleteConfirmClick_}">
       Delete
+    </cr-button>
+  </div>
+</cr-dialog>
+<cr-dialog id="cleanupDialog" close-text="Close">
+  <div slot="title">Clean up idle agents</div>
+  <div slot="body">
+    <div class="dialog-text">
+      Delete agents with no open session and no activity for
+      <input id="cleanupDays" type="number" min="1" max="3650"
+          .value="${String(this.cleanupDays_)}"
+          @change="${this.onCleanupDaysChange_}"> days. Their cookies, logins
+      and other site data are deleted. Agents marked Keep and temporary
+      agents are never touched.
+    </div>
+    ${this.cleanupError_ ? html`
+      <div class="dialog-text error">${this.cleanupError_}</div>` : nothing}
+    ${this.cleanupAgents_ === null && !this.cleanupError_ ? html`
+      <div class="secondary">Checking…</div>` : nothing}
+    ${this.cleanupAgents_ && !this.cleanupAgents_.length ? html`
+      <div class="secondary">Nothing to delete.</div>` : nothing}
+    ${this.cleanupAgents_ && this.cleanupAgents_.length ? html`
+      <div class="dialog-text">These ${this.cleanupAgents_.length} will be
+          deleted:</div>
+      <ul id="cleanupList">
+        ${this.cleanupAgents_.map(agent => html`
+          <li>${agent.name} <span class="secondary">(${agent.id}) ·
+              last active ${this.since_(agent.lastActiveAt)}</span></li>`)}
+      </ul>` : nothing}
+  </div>
+  <div slot="button-container">
+    <cr-button class="cancel-button" @click="${this.onCleanupCancelClick_}">
+      Cancel
+    </cr-button>
+    <cr-button class="action-button" id="cleanupConfirm"
+        ?disabled="${!this.cleanupAgents_?.length}"
+        @click="${this.onCleanupConfirmClick_}">
+      Delete ${this.cleanupAgents_?.length || ''}
     </cr-button>
   </div>
 </cr-dialog>

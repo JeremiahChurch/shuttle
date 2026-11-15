@@ -318,6 +318,7 @@ const Session& SessionManager::Open(
   session.last_activity = session.opened;
   session.last_activity_ticks = base::TimeTicks::Now();
   session.idle_timeout = idle_timeout.value_or(base::TimeDelta());
+  registry_->RecordActivity(agent_id, session.opened);
   UpdateIdleTimer();
 #if BUILDFLAG(IS_LINUX)
   UpdateKeepAlive();
@@ -500,6 +501,7 @@ bool SessionManager::Close(const std::string& session_id) {
     return false;
   }
   std::string agent_id = it->second.agent;
+  registry_->RecordActivity(agent_id, it->second.last_activity);
   std::vector<content::WebContents*> tabs = TabsOf(session_id);
   // The user's active tab is one of the session's: the home tab gets focus
   // (the tabs close one by one; the next-tab rule would pick a sibling).
