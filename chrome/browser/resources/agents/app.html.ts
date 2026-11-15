@@ -120,10 +120,10 @@ export function getHtml(this: AgentsAppElement) {
               ${agent.id} · ${this.plural_(agent.sessions, 'session')} ·
               ${this.plural_(agent.tabs, 'tab')}
             </div>
-            ${agent.throwaway ? nothing : html`
+            ${!agent.throwaway ? html`
               <div class="secondary last-active">
                 ${this.lastActiveText_(agent)}${agent.keep ? ' · Kept' : ''}
-              </div>`}
+              </div>` : nothing}
           </div>
           <cr-button class="open-tab" data-agent="${agent.id}"
               @click="${this.onOpenTabClick_}"
