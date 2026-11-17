@@ -71,9 +71,14 @@ class ShuttleService : public KeyedService {
   struct AgentSummary {
     std::string id;
     std::string name;
+    // The agent has an open session (so tabs in the tab strip).
+    bool open = false;
   };
-  // All agents, by name.
+  // All agents: those with open sessions first, then by name.
   std::vector<AgentSummary> ListAgents() const;
+  // Opens a new foreground tab in `agent_id`'s storage, leased to its latest
+  // session, and brings it to the front. Returns false if the agent is gone.
+  bool OpenNewTabInAgent(const std::string& agent_id);
   // The agent `contents` works for (is leased to), or "".
   std::string AgentOfTab(content::WebContents* contents) const;
   // The agent whose tabs form `group`, or "".

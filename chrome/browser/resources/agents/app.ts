@@ -19,7 +19,7 @@ import {CrLitElement} from 'chrome://resources/lit/v3_0/lit.rollup.js';
 
 import {getCss} from './app.css.js';
 import {getHtml} from './app.html.js';
-import type {Agent, AgentIdentity, BrowserProxy, IdleAgent, Session} from './browser_proxy.js';
+import type {Agent, AgentIdentity, BrowserProxy, IdleAgent, Session, UsageSnapshot} from './browser_proxy.js';
 import {AGENT_COLORS, BrowserProxyImpl} from './browser_proxy.js';
 
 // Avatar images from files: edge length in px, and the browser's size limit.
@@ -33,6 +33,7 @@ const REFRESH_MS = 2000;
 // no agents).
 const QUICK_START_KEY = 'quickStart';
 const SORT_KEY = 'agentSort';
+const USAGE_KEY = 'browserUsage';
 const DEFAULT_MCP_URL = 'http://127.0.0.1:9222/mcp';
 
 export const EXAMPLE_PROMPT = 'Use the Shuttle browser (MCP server "shuttle"): ' +
@@ -93,6 +94,8 @@ export class AgentsAppElement extends CrLitElement {
       openError_: {type: String},
       deleteAgent_: {type: Object},
       sort_: {type: String},
+      usage_: {type: Object},
+      usageOpen_: {type: Boolean},
       cleanupDays_: {type: Number},
       cleanupAgents_: {type: Array},
       cleanupError_: {type: String},
@@ -116,6 +119,9 @@ export class AgentsAppElement extends CrLitElement {
   // 'name' or 'recent' (most recently active first).
   protected accessor sort_: string =
       window.localStorage.getItem(SORT_KEY) || 'name';
+  protected accessor usage_: UsageSnapshot|null = null;
+  protected accessor usageOpen_: boolean =
+      window.localStorage.getItem(USAGE_KEY) === 'open';
   protected accessor cleanupDays_: number = 14;
   protected accessor cleanupAgents_: IdleAgent[]|null = null;
   protected accessor cleanupError_: string = '';
@@ -178,6 +184,12 @@ export class AgentsAppElement extends CrLitElement {
       this.error_ = String(e);
     }
     this.loaded_ = true;
+    // Memory is a nicety: a failure doesn't show as an error.
+    try {
+      this.usage_ = await this.browserProxy_.getUsage();
+    } catch {
+      this.usage_ = null;
+    }
     this.schedule_();
   }
 
@@ -247,6 +259,10 @@ export class AgentsAppElement extends CrLitElement {
       const time = (a: Agent) =>
           a.lastActiveAt ? new Date(a.lastActiveAt).getTime() : 0;
       sorted.sort((a, b) => time(b) - time(a));
+    } else if (this.sort_ === 'memory') {
+      sorted.sort(
+          (a, b) => this.agentBytes_(b) - this.agentBytes_(a) ||
+              a.name.localeCompare(b.name));
     } else {
       sorted.sort((a, b) => a.name.localeCompare(b.name));
     }
@@ -257,6 +273,46 @@ export class AgentsAppElement extends CrLitElement {
     this.sort_ = (e.target as HTMLSelectElement).value;
     try {
       window.localStorage.setItem(SORT_KEY, this.sort_);
+    } catch {
+      // Not remembered.
+    }
+  }
+
+  protected agentBytes_(agent: Agent): number {
+    return this.usage_?.agents[agent.id]?.bytes || 0;
+  }
+
+  // "412 MB" for agents with open tabs once measured, else ''.
+  protected agentMemoryText_(agent: Agent): string {
+    const bytes = this.agentBytes_(agent);
+    return bytes > 0 ? this.bytesText_(bytes) : '';
+  }
+
+  protected bytesText_(bytes: number): string {
+    const mb = bytes / (1024 * 1024);
+    if (mb >= 1024) {
+      return `${(mb / 1024).toFixed(1)} GB`;
+    }
+    return `${Math.round(mb)} MB`;
+  }
+
+  protected usageSummary_(): string {
+    const usage = this.usage_;
+    if (!usage || !usage.measured) {
+      return 'Measuring...';
+    }
+    const processes = usage.types.reduce((n, t) => n + t.count, 0);
+    const working = Object.keys(usage.agents).length;
+    return `${this.bytesText_(usage.totalBytes)} in ${processes} ${
+        processes === 1 ? 'process' : 'processes'} · ${
+        this.plural_(working, 'agent')} with open tabs (${
+        this.plural_(usage.agentTabs, 'tab')})`;
+  }
+
+  protected onUsageToggleClick_() {
+    this.usageOpen_ = !this.usageOpen_;
+    try {
+      window.localStorage.setItem(USAGE_KEY, this.usageOpen_ ? 'open' : '');
     } catch {
       // Not remembered.
     }

@@ -33,6 +33,20 @@ export interface IdleAgent {
   lastActiveAt: string;
 }
 
+// What the browser is running (task manager numbers).
+export interface UsageSnapshot {
+  // False until the first measurement is in.
+  measured: boolean;
+  totalBytes: number;
+  // Processes by kind (Tab, Browser, Graphics, Extension, ...).
+  types: Array<{type: string, count: number, bytes: number}>;
+  // The biggest processes.
+  processes: Array<{type: string, title: string, bytes: number}>;
+  // Memory and open tabs per agent id (agents with open tabs only).
+  agents: Record<string, {bytes: number, tabs: number}>;
+  agentTabs: number;
+}
+
 export interface AgentTab {
   targetId: string;
   url: string;
@@ -71,6 +85,7 @@ export interface BrowserProxy {
   showTab(targetId: string): Promise<void>;
   // This browser's MCP endpoint ('' if unknown).
   getMcpUrl(): Promise<string>;
+  getUsage(): Promise<UsageSnapshot>;
 }
 
 export class BrowserProxyImpl implements BrowserProxy {
@@ -119,6 +134,10 @@ export class BrowserProxyImpl implements BrowserProxy {
 
   getMcpUrl(): Promise<string> {
     return sendWithPromise('getMcpUrl');
+  }
+
+  getUsage(): Promise<UsageSnapshot> {
+    return sendWithPromise('getUsage');
   }
 
   static getInstance(): BrowserProxy {

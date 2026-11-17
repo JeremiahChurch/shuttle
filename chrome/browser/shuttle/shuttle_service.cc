@@ -402,12 +402,20 @@ std::vector<ShuttleService::AgentSummary> ShuttleService::ListAgents()
     const {
   std::vector<AgentSummary> agents;
   for (const ProfileRegistry::Entry& entry : profiles_->List()) {
-    agents.push_back({entry.id, entry.name});
+    agents.push_back(
+        {entry.id, entry.name, !sessions_->SessionsOf(entry.id).empty()});
   }
   std::ranges::sort(agents, [](const AgentSummary& a, const AgentSummary& b) {
+    if (a.open != b.open) {
+      return a.open;
+    }
     return base::ToLowerASCII(a.name) < base::ToLowerASCII(b.name);
   });
   return agents;
+}
+
+bool ShuttleService::OpenNewTabInAgent(const std::string& agent_id) {
+  return sessions_->OpenTabForUser(agent_id, GURL()).has_value();
 }
 
 std::string ShuttleService::AgentOfTab(

@@ -16,6 +16,8 @@ export function getHtml(this: AgentsAppElement) {
     </option>
     <option value="recent" ?selected="${this.sort_ === 'recent'}">
       Sort: Recent</option>
+    <option value="memory" ?selected="${this.sort_ === 'memory'}">
+      Sort: Memory</option>
   </select>
   <cr-button id="cleanup" @click="${this.onCleanupClick_}"
       title="Delete agents nobody has used for a while">
@@ -91,6 +93,35 @@ export function getHtml(this: AgentsAppElement) {
         </div>` : nothing}
     </div>
 
+    <div class="card" id="usage">
+      <button class="row quick-start-header" id="usageToggle"
+          aria-expanded="${this.usageOpen_}"
+          @click="${this.onUsageToggleClick_}">
+        <div class="text">
+          <div class="name">Browser</div>
+          <div class="secondary" id="usageSummary">${this.usageSummary_()}</div>
+        </div>
+        <cr-icon icon="${this.usageOpen_ ? 'cr:keyboard-arrow-up' :
+                                           'cr:keyboard-arrow-down'}">
+        </cr-icon>
+      </button>
+      ${this.usageOpen_ && this.usage_?.measured ? html`
+        <div class="usage-body">
+          <div class="usage-types">
+            ${this.usage_.types.map(t => html`
+              <span class="usage-chip">${t.type} · ${t.count} ·
+                ${this.bytesText_(t.bytes)}</span>`)}
+          </div>
+          <div class="secondary">Biggest processes</div>
+          ${this.usage_.processes.map(p => html`
+            <div class="usage-row">
+              <span class="usage-kind">${p.type}</span>
+              <span class="usage-title">${p.title}</span>
+              <span class="usage-bytes">${this.bytesText_(p.bytes)}</span>
+            </div>`)}
+        </div>` : nothing}
+    </div>
+
     ${this.loaded_ && !this.agents_.length ? html`
       <div id="empty">
         <div class="empty-title">No agents yet</div>
@@ -118,7 +149,9 @@ export function getHtml(this: AgentsAppElement) {
             </div>
             <div class="secondary">
               ${agent.id} · ${this.plural_(agent.sessions, 'session')} ·
-              ${this.plural_(agent.tabs, 'tab')}
+              ${this.plural_(agent.tabs, 'tab')}${
+        this.agentMemoryText_(agent) ?
+            ' · ' + this.agentMemoryText_(agent) : ''}
             </div>
             ${!agent.throwaway ? html`
               <div class="secondary last-active">

@@ -18,6 +18,7 @@ source_set("agents") {
     "//chrome/browser/shuttle",
     "//chrome/browser/shuttle:impl",
     "//chrome/browser/profiles:profile",
+    "//chrome/browser/task_manager",
     "//chrome/browser/resources/agents:resources",
     "//chrome/browser/ui/webui:theme_source",
     "//chrome/common",

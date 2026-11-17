@@ -396,3 +396,44 @@ cr-dialog [slot=body] {
   margin: 0;
   padding-inline-start: 20px;
 }
+
+#usage .usage-body {
+  padding: 0 20px 12px;
+}
+
+.usage-types {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 8px;
+}
+
+.usage-chip {
+  background: var(--cr-fallback-color-surface-variant, rgba(128, 128, 128, 0.15));
+  border-radius: 12px;
+  font-size: 12px;
+  padding: 2px 10px;
+}
+
+.usage-row {
+  display: flex;
+  font-size: 13px;
+  gap: 12px;
+  padding: 3px 0;
+}
+
+.usage-kind {
+  color: var(--cr-secondary-text-color);
+  flex: 0 0 72px;
+}
+
+.usage-title {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.usage-bytes {
+  flex: 0 0 auto;
+}
