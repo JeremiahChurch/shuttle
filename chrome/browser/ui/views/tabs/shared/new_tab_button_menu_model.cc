@@ -43,6 +43,8 @@ constexpr size_t kMaxAgentsInMenu = 8;
 NewTabButtonMenuModel::NewTabButtonMenuModel(BrowserWindowInterface* browser)
     : ui::SimpleMenuModel(this), browser_(browser) {
   CHECK(browser_);
+  TabStripModel* const tab_strip_model = browser_->GetTabStripModel();
+  CHECK(tab_strip_model);
 
   // Build the menu.
   AddItemWithStringId(IDC_NEW_TAB, IDS_NEW_TAB_BUTTON_CXMENU_NEW_TAB);
