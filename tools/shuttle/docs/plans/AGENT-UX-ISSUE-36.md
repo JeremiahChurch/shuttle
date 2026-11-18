@@ -57,7 +57,7 @@ Scope: persistent agents (throwaway agents expire on their own).
 ## 4. New tab in an agent (their d73cf0ba06, fixed)
 
 - "+" while an agent's tab is shown opens a tab for that agent (its storage, its latest session, in its group).
-  Ctrl/Cmd+T stays a plain new tab. Right-click on "+": "New tab" + "New tab in <agent>" for agents with open
+  Cmd/Ctrl+T does the same (it runs the same new-tab action; checked on Linux/X11). Right-click on "+": "New tab" + "New tab in <agent>" for agents with open
   sessions (shown agent first), the rest under "New tab in another agent".
 - **S2 fix**: no interception in the generic `AddAndReturnTabAt`. Instead the two group commands of the tab context
   menu ("New tab to the right", "New tab in group") check for an agent group in their own handlers and call

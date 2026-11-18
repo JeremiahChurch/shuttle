@@ -365,7 +365,8 @@ void BrowserActions::InitializeChromeMenuActions() {
                  actions::ActionInvocationContext context) {
                 // Shuttle: the new tab button, pressed while looking at an
                 // agent's tab, adds a tab to that agent (its right-click menu
-                // picks any agent). Ctrl+T stays a plain new tab.
+                // picks any agent). Cmd/Ctrl+T runs this action too. The classic tab
+                // strip's "+" button has its own path (BrowserTabStripController).
                 if (auto* agents =
                         shuttle::ShuttleService::Get(bwi->GetProfile())) {
                   const std::string agent_id = agents->AgentOfTab(

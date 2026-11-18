@@ -25,7 +25,7 @@ Many agents share one Shuttle instance. Smoke tests: `scripts/smoke-mcp.mjs`, `s
   leased but ungrouped (known gap).
 - No startup window: Shuttle starts windowless unless it has URLs; the first agent tab or the user creates a window.
 - "+" while an agent's tab is shown opens a blank tab for that agent (its storage, its latest session or a new one, in
-  its group); Cmd/Ctrl+T stays a plain user tab. Right-click on "+" lists "New tab in <agent>" (agents with open
+  its group); so does Cmd/Ctrl+T (checked on Linux/X11). Right-click on "+" lists "New tab in <agent>" (agents with open
   sessions; the rest under "New tab in another agent"). "New tab to the right" / "New tab in group" inside an agent's
   group open an agent tab at that position. Such tabs belong to the session and close with it.
 
