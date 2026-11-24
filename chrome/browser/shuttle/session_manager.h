@@ -141,6 +141,9 @@ class SessionManager : public TabStripModelObserver {
       std::optional<gfx::Size> viewport,
       const TabPlacement& placement = TabPlacement());
   void ReleaseTab(content::WebContents* contents);
+  // Browser-created tabs: lease in the right partition before navigation.
+  std::unique_ptr<content::WebContents> CreateTabForNavigation(
+      const std::string& agent_id, const GURL& url, bool hidden);
   // Closes without beforeunload/unload handlers (no dialog can keep the tab):
   // for automatic closes, which must not leave a tab behind.
   void DiscardTab(content::WebContents* contents);

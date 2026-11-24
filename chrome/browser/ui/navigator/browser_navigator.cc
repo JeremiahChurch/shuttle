@@ -28,6 +28,7 @@
 #include "chrome/browser/ui/browser_ui_controller/browser_ui_controller.h"
 #include "chrome/browser/shuttle/agent_partition.h"
 #include "chrome/browser/shuttle/home_tab.h"
+#include "chrome/browser/shuttle/shuttle_service.h"
 #include "chrome/browser/ui/browser_window.h"
 #include "chrome/browser/ui/browser_window/public/browser_window_interface.h"
 #include "chrome/browser/ui/browser_window/public/browser_window_interface_iterator.h"
@@ -428,6 +429,30 @@ Profile* GetSourceProfile(NavigateParams* params) {
 std::unique_ptr<content::WebContents> CreateTargetContents(
     const NavigateParams& params,
     const GURL& url) {
+  // Match AddTab's group inheritance before starting the first navigation.
+  // Adopting an ordinary tab afterwards loses pending URLs and can send a
+  // request from the user's storage before the agent owns it.
+  if (!params.opener && !(params.tabstrip_add_types & AddTabTypes::ADD_PINNED)) {
+    TabStripModel* strip = params.browser->GetTabStripModel();
+    auto group = params.group ? params.group : strip->GetFocusedGroup();
+    if (!group && ui::PageTransitionTypeIncludingQualifiersIs(
+                      params.transition, ui::PAGE_TRANSITION_LINK) &&
+        !(params.tabstrip_add_types & AddTabTypes::ADD_FORCE_INDEX)) {
+      group = strip->GetTabGroupForTab(strip->active_index());
+    }
+    if (!group) {
+      group = strip->GetSurroundingTabGroup(params.tabstrip_index);
+    }
+    if (group) {
+      auto* agents = shuttle::ShuttleService::Get(params.browser->GetProfile());
+      const std::string agent = agents->AgentOfGroup(*group);
+      if (!agent.empty()) {
+        return agents->CreateTabForNavigation(
+            agent, url,
+            params.disposition == WindowOpenDisposition::kNewBackgroundTab);
+      }
+    }
+  }
   // Always create the new WebContents in a new SiteInstance (and therefore a
   // new BrowsingInstance), *unless* there's a |params.opener|.
   //

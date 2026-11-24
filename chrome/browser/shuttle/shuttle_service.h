@@ -23,6 +23,7 @@
 #include "ui/gfx/image/image_skia.h"
 
 class Profile;
+class GURL;
 
 namespace content {
 class WebContents;
@@ -99,6 +100,8 @@ class ShuttleService : public KeyedService {
                       const std::string& agent_id);
   // Takes an agent's tab back: it reopens as an ordinary tab.
   void TakeBackTab(content::WebContents* contents);
+  std::unique_ptr<content::WebContents> CreateTabForNavigation(
+      const std::string& agent_id, const GURL& url, bool hidden);
 
   // Creates a throwaway agent (see ProfileRegistry). Returns its id, or an
   // error (the cap of live throwaway agents is reached).

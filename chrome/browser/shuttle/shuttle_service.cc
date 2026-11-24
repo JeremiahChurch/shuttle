@@ -471,6 +471,11 @@ void ShuttleService::TakeBackTab(content::WebContents* contents) {
   sessions_->TakeBackTab(contents);
 }
 
+std::unique_ptr<content::WebContents> ShuttleService::CreateTabForNavigation(
+    const std::string& agent_id, const GURL& url, bool hidden) {
+  return sessions_->CreateTabForNavigation(agent_id, url, hidden);
+}
+
 void ShuttleService::Shutdown() {
   // Cookies set shortly before exit are otherwise lost (seen in the
   // partition spike with Browser.close).

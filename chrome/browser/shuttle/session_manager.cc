@@ -689,6 +689,18 @@ std::unique_ptr<content::WebContents> SessionManager::CreateAgentContents(
   return content::WebContents::Create(create_params);
 }
 
+std::unique_ptr<content::WebContents> SessionManager::CreateTabForNavigation(
+    const std::string& agent_id, const GURL& url, bool hidden) {
+  if (!registry_->Exists(agent_id)) {
+    return nullptr;
+  }
+  const Session* session = LatestSession(agent_id);
+  std::string session_id = session ? session->id : Open(agent_id).id;
+  auto contents = CreateAgentContents(agent_id, url, hidden);
+  Lease(contents.get(), session_id);
+  return contents;
+}
+
 void SessionManager::ReleaseTab(content::WebContents* contents) {
   TabLocation location = FindInTabStrips(contents);
   if (location.tab_strip) {
@@ -999,7 +1011,9 @@ void SessionManager::AdoptTab(base::WeakPtr<content::WebContents> contents,
 
   // Reopen the page in the agent's storage. Browser pages (the New Tab page
   // and other WebUI) don't belong in agent storage: they become about:blank.
-  GURL url = contents->GetLastCommittedURL();
+  // A new extension tab can join a group before its first request commits.
+  // Preserve the pending destination instead of reopening its empty document.
+  GURL url = contents->GetVisibleURL();
   if (!url.SchemeIsHTTPOrHTTPS()) {
     url = GURL(url::kAboutBlankURL);
   }

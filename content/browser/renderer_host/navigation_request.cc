@@ -6369,6 +6369,26 @@ void NavigationRequest::OnStartChecksComplete(
 
   // Give DevTools a chance to override begin params (headers, skip SW)
   // before actually loading resource.
+  // Auto-attach can pause a new tab while its browser identity is configured.
+  // Client hints were computed before that pause. Refresh the UA hints now,
+  // alongside the existing DevTools User-Agent header override.
+  std::optional<blink::UserAgentMetadata> devtools_metadata;
+  if (devtools_instrumentation::ApplyUserAgentMetadataOverrides(
+          frame_tree_node_, &devtools_metadata, common_params_->url)) {
+    auto* delegate = frame_tree_node_->navigator()
+                         .controller()
+                         .GetBrowserContext()
+                         ->GetClientHintsControllerDelegate();
+    if (delegate) {
+      net::HttpRequestHeaders headers;
+      headers.AddHeadersFromString(begin_params_->headers);
+      UpdateNavigationRequestClientUaHeaders(
+          GetTentativeOriginAtRequestTime(), delegate,
+          is_overriding_user_agent(), frame_tree_node_, &headers,
+          common_params_->url);
+      begin_params_->headers = headers.ToString();
+    }
+  }
   bool report_raw_headers = false;
   GURL devtools_referrer_override;
   headers_before_devtools_overrides_ = begin_params_->headers;
