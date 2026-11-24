@@ -1088,9 +1088,18 @@ void AuthenticatorCommonImpl::StartGetAssertionRequest(
 }
 
 bool AuthenticatorCommonImpl::IsFocused() const {
-  return GetRenderFrameHost()->IsActive() &&
-         GetWebAuthenticationDelegate()->IsFocused(
-             WebContents::FromRenderFrameHost(GetRenderFrameHost()));
+  if (!GetRenderFrameHost()->IsActive()) {
+    return false;
+  }
+  // Shuttle keeps agent tabs hidden. A DevTools virtual authenticator replaces
+  // real authenticators for this frame tree, so no user-facing prompt needs focus.
+  if (AuthenticatorEnvironment::GetInstance()->IsVirtualAuthenticatorEnabledFor(
+          static_cast<RenderFrameHostImpl*>(GetRenderFrameHost())
+              ->frame_tree_node())) {
+    return true;
+  }
+  return GetWebAuthenticationDelegate()->IsFocused(
+      WebContents::FromRenderFrameHost(GetRenderFrameHost()));
 }
 
 // mojom::Authenticator

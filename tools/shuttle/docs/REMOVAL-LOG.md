@@ -1270,3 +1270,19 @@ DCHECK). One upstream file changed: `cr_toolbar.html.ts` gets a `center-end` slo
   no longer resolved to the agent ("New tab to the right" there opened in default storage); now every group maps
   back to its agent (`group_agents_`), one per window. (F3, P3) Out-of-process iframes counted as extra tabs: tabs
   are counted once per tab id. Fork 62: no findings.
+
+## Hidden-tab WebAuthn with DevTools virtual authenticators
+
+Nothing removed. `content/browser/webauth/authenticator_common_impl.cc` keeps the
+active-frame check, then accepts focus when `AuthenticatorEnvironment` has a
+virtual authenticator environment for the requesting frame tree. DevTools
+`WebAuthn.enable` creates that environment; it replaces real authenticator
+discovery. Frames without it still use the unchanged embedder visibility check.
+The environment lookup follows ancestor frames, as virtual authenticator discovery
+already does, and cannot find an environment attached to another tab.
+
+Chromium browser-test targets and the WebAuthn browser-test files are pruned in
+this fork. Verify with session CDP on a separate test browser: hidden-tab
+registration, export and restore the throwaway credential into a new virtual
+authenticator, then sign in; also check rejection without `WebAuthn.enable`,
+from a different tab, and after `WebAuthn.disable`. No extension policy changes.
