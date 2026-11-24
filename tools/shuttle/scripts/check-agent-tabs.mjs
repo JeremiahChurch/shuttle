@@ -1,6 +1,11 @@
+// Copyright 2026 Silkweave
+// Use of this source code is governed by a BSD-style license that can be
+// found in the LICENSE file.
+
 import {spawn} from 'node:child_process';
 import {openSync, writeFileSync, mkdirSync, readFileSync, mkdtempSync} from 'node:fs';
 import http from 'node:http';
+import net from 'node:net';
 import path from 'node:path';
 import os from 'node:os';
 
@@ -13,6 +18,10 @@ const dir = evidenceDir || mkdtempSync(path.join(os.tmpdir(), 'shuttle-agent-tab
 console.log('Evidence directory:', dir);
 mkdirSync(dir, {recursive: true});
 const port = mode === 'baseline' ? 19450 : 19451;
+// Refuse a used port before launching or connecting to any browser.
+const reservation = net.createServer();
+await new Promise((resolve,reject)=>{reservation.once('error',reject);reservation.listen(port,'127.0.0.1',resolve);});
+await new Promise(resolve=>reservation.close(resolve));
 const ext = 'aeblfdkhhhdcdjpifhhbdiojplfjncoa';
 const checks = [], requests = [], sockets = [];
 let browser, keeper, control, lane;
@@ -83,13 +92,23 @@ try {
   check('initial injection in agent',mode === 'baseline' ? initial.atStart.main : !initial.atStart.main && !initial.atStart.isolated,initial);
   if(mode !== 'baseline') {
     check('same-site and cross-site child frames blocked',initial.childResults.length === 2 && initial.childResults.every(x=>!x.child.main&&!x.child.isolated),initial.childResults);
+    const deniedInitial=await evaluate(es,`(async()=>chrome.scripting.executeScript({target:{tabId:(await chrome.tabs.query({})).find(t=>t.url===${JSON.stringify(url('/parent-a'))}).id,allFrames:true},world:'MAIN',func:()=>{window.deniedInitial=true;return true}}).then(r=>({r}),e=>({error:e.message})))()`);
+    check('default-off programmatic injection blocked',!await evaluate(s1,'!!window.deniedInitial',lane),deniedInitial);
+    const blank=await evaluate(s1,`new Promise(resolve=>{const f=document.createElement('iframe');f.srcdoc='<script>parent.postMessage({blankPolicy:!!window.syntheticMain},"*")<\/script>';addEventListener('message',function listener(e){if('blankPolicy' in e.data){removeEventListener('message',listener);f.remove();resolve(e.data.blankPolicy)} });document.body.append(f);})`,lane);
+    check('srcdoc descendant blocked',blank===false);
     check('1Password default off in API',(await tool('list-agents')).agents.find(x=>x.id==='probe-agent').extensions[ext]===false);
   }
   const tabInfo = await evaluate(es,`chrome.tabs.query({}).then(t=>t.filter(x=>x.url?.includes('/parent-'))) `);
   console.log('agent chrome.tabs metadata',JSON.stringify(tabInfo.map(t=>({id:t.id,groupId:t.groupId,index:t.index,windowId:t.windowId}))));
   const first = tabInfo.find(t=>t.url===url('/parent-a'));
   // Open in the interior of the agent's group while the first request is pending.
-  const created = await evaluate(es,`chrome.tabs.create(${JSON.stringify({url:url('/slow-extension'),windowId:first.windowId,index:first.index+1,active:false})})`);
+  const seed = await evaluate(es,`chrome.tabs.create(${JSON.stringify({url:url('/userseed'),active:false,index:0,windowId:first.windowId})})`);
+  await sleep(800);
+  const seedTarget = (await control.send('Target.getTargets')).targetInfos.find(t=>t.url===url('/userseed'));
+  const seedSession = await attach(seedTarget.targetId);
+  await evaluate(seedSession,"document.cookie='lane=person;Path=/';true");
+  await evaluate(s1,"document.cookie='lane=agent;Path=/';true",lane);
+  const created = await evaluate(es,`chrome.tabs.create(${JSON.stringify({url:url('/slow-extension'),windowId:first.windowId,index:first.index+2,active:false})})`);
   await sleep(2500);
   const after = (await tool('list-sessions')).sessions.find(s=>s.sessionId===session.sessionId).tabs;
   const infos = (await control.send('Target.getTargets')).targetInfos.filter(x=>x.type==='page');
@@ -118,12 +137,26 @@ try {
     check('revoked programmatic injection blocked',!await evaluate(s1,'!!window.deniedProgrammatic',lane),denied);
     await lane.send('Page.navigate',{url:url('/revoked')},s1);
     await until(()=>evaluate(s1,'location.pathname === "/revoked" && childResults.length===2',lane),'revoked navigation');
-    check('fresh navigation removes wrappers',!await evaluate(s1,'!!window.syntheticMain',lane));
+    const revoked=await evaluate(s1,'({atStart,childResults})',lane);
+    check('fresh navigation removes wrappers in all descendants',!revoked.atStart.main&&revoked.childResults.every(x=>!x.child.main&&!x.child.isolated),revoked);
     const bad=await tool('update-agent',{id:'probe-agent',extensions:{bad:true}},true);
     check('malformed extension IDs rejected',!!bad.result?.isError,bad.result?.content?.[0]?.text);
     const firstRequests = requests.filter(x=>x.url==='/slow-extension');
     if (keeper) check('extension first request uses Google Chrome identity',firstRequests.length===1&&firstRequests.every(x=>x.brands.includes('Google Chrome')),firstRequests);
     else console.log('SKIP browser brand check: set SHUTTLE_UA_KEEPER');
+    check('extension first request uses agent cookies',firstRequests.length===1&&firstRequests[0].cookie==='lane=agent',firstRequests);
+    const normalRequests=requests.filter(x=>x.url==='/normal');
+    check('ordinary first request uses personal cookies',normalRequests.length===1&&normalRequests[0].cookie==='lane=person',normalRequests);
+    if(keeper)check('ordinary first request uses Google Chrome identity',normalRequests.every(x=>x.brands.includes('Google Chrome')),normalRequests);
+    await tool('create-agent',{id:'probe-granted',extensions:{[ext]:true}});
+    const gs=await tool('open-session',{agent:'probe-granted',idleMinutes:0});
+    const gt=await tool('allocate-tab',{sessionId:gs.sessionId,url:url('/grant-at-create')});
+    const gc=await connect(gs.cdpEndpoint), gsid=await attach(gt.targetId,gc);
+    await until(()=>evaluate(gsid,'!!window.atStart',gc),'grant at create');
+    check('grant at create applies before first page script',await evaluate(gsid,'atStart.main && atStart.isolated==="yes"',gc));
+    const popup=await evaluate(s1,`window.open(${JSON.stringify(url('/slow-popup'))},'_blank','noopener');true`,lane);
+    await sleep(2000);
+    check('agent window.open keeps URL',(await tool('list-sessions')).sessions.find(x=>x.sessionId===session.sessionId).tabs.some(t=>t.url===url('/slow-popup')));
   }
 } catch(e) {check('probe completed',false,e.stack);}
 finally {

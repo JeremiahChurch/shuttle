@@ -812,6 +812,7 @@ base::WeakPtr<content::NavigationHandle> NavigateImpl(
       !ui::PageTransitionIsWebTriggerable(params->transition);
 
   base::WeakPtr<content::NavigationHandle> navigation_handle;
+  std::optional<NavigationController::LoadURLParams> load_after_insertion;
 
   std::unique_ptr<tabs::TabModel> tab_to_insert;
   if (params->contents_to_insert) {
@@ -863,9 +864,16 @@ base::WeakPtr<content::NavigationHandle> NavigateImpl(
       NavigationController::LoadURLParams load_url_params =
           LoadURLParamsFromNavigateParams(contents_to_navigate_or_insert,
                                           params);
-      navigation_handle =
-          contents_to_navigate_or_insert->GetController().LoadURLWithParams(
-              load_url_params);
+      if (tab_to_insert) {
+        // Insertion installs the browser delegate and announces the DevTools
+        // target. Auto-attach must be able to pause the first request while
+        // the client configures this tab's browser identity.
+        load_after_insertion = std::move(load_url_params);
+      } else {
+        navigation_handle =
+            contents_to_navigate_or_insert->GetController().LoadURLWithParams(
+                load_url_params);
+      }
     }
   } else {
     // |contents_to_navigate_or_insert| was specified non-NULL, and so we assume
@@ -975,6 +983,12 @@ base::WeakPtr<content::NavigationHandle> NavigateImpl(
         tab_strip_model->ActivateTab(new_tab);
       }
     }
+  }
+
+  if (load_after_insertion) {
+    navigation_handle =
+        contents_to_navigate_or_insert->GetController().LoadURLWithParams(
+            *load_after_insertion);
   }
 
   if (singleton_index >= 0) {
