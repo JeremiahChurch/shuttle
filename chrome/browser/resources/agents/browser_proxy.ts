@@ -14,6 +14,8 @@ export interface Agent {
   color: string;
   avatar?: string;
   persistSessionCookies: boolean;
+  extensions: Record<string, boolean>;
+  extensionChangesRequireNavigation: boolean;
   createdAt: string;
   // Throwaway agents: deleted after idleMinutes without activity.
   throwaway?: boolean;
@@ -61,6 +63,7 @@ export interface AgentIdentity {
   color?: string;
   avatar?: string;
   persistSessionCookies?: boolean;
+  extensions?: Record<string, boolean>;
   keep?: boolean;
 }
 

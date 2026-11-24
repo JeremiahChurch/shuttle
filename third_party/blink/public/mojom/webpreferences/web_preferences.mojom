@@ -549,4 +549,5 @@ struct WebPreferences {
   // M158, or whenever XSLT is disabled by default (other than for origin
   // trials and enterprise policy).
   bool is_xslt_deprecation_banner_suppressed = false;
+  array<string> shuttle_blocked_extensions;
 };

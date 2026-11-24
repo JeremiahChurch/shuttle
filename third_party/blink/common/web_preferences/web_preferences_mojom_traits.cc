@@ -259,6 +259,10 @@ bool StructTraits<blink::mojom::WebPreferencesDataView,
   out->is_xslt_deprecation_banner_suppressed =
       data.is_xslt_deprecation_banner_suppressed();
 
+  if (!data.ReadShuttleBlockedExtensions(&out->shuttle_blocked_extensions)) {
+    return false;
+  }
+
   return true;
 }
 

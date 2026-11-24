@@ -867,6 +867,10 @@ struct BLINK_COMMON_EXPORT StructTraits<blink::mojom::WebPreferencesDataView,
 
   static bool Read(blink::mojom::WebPreferencesDataView r,
                    blink::web_pref::WebPreferences* out);
+  static const std::vector<std::string>& shuttle_blocked_extensions(
+      const blink::web_pref::WebPreferences& r) {
+    return r.shuttle_blocked_extensions;
+  }
 };
 
 }  // namespace mojo

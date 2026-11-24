@@ -158,6 +158,8 @@
 #include "chrome/browser/service_worker/service_worker_prewarm.h"
 #include "chrome/browser/service_worker/service_worker_synthetic_response.h"
 #include "chrome/browser/shuttle/agent_partition.h"
+#include "chrome/browser/shuttle/profile_registry.h"
+#include "chrome/browser/shuttle/shuttle_service.h"
 #include "chrome/browser/site_protection/site_familiarity_process_selection_deferring_condition.h"
 #include "chrome/browser/site_protection/site_familiarity_process_selection_user_data.h"
 #include "chrome/browser/site_protection/site_familiarity_utils.h"
@@ -4015,6 +4017,17 @@ void ChromeContentBrowserClient::OverrideWebPreferences(
     WebPreferences* web_prefs) {
   Profile* profile = GetProfileForWebPreferences(web_contents);
   PrefService* prefs = profile->GetPrefs();
+
+  // The fixed storage partition identifies the agent before its first
+  // navigation. WebPreferences travel with view creation, so extension
+  // scripts cannot race a later per-frame policy message.
+  const std::string agent = shuttle::ProfileRegistry::IdForConfig(
+      profile->GetStoragePartition(&main_frame_site)->GetConfig());
+  if (!agent.empty()) {
+    web_prefs->shuttle_blocked_extensions =
+        shuttle::ShuttleService::Get(profile)->profiles().BlockedExtensions(
+            agent);
+  }
 
 // Fill font preferences. These are not registered on Android unless we're built
 // with extensions (the chrome.fontSettings API can change these).

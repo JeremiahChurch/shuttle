@@ -188,6 +188,13 @@ base::DictValue DescribeAgent(const ToolContext& context,
           .Set("lastActiveAt",
                base::TimeFormatAsIso8601(LastActiveOf(context, entry)))
           .Set("keep", entry.keep);
+  base::DictValue extensions;
+  extensions.Set("aeblfdkhhhdcdjpifhhbdiojplfjncoa", false);
+  for (const auto& [id, enabled] : entry.extensions) {
+    extensions.Set(id, enabled);
+  }
+  dict.Set("extensions", std::move(extensions));
+  dict.Set("extensionChangesRequireNavigation", true);
   if (entry.throwaway) {
     dict.Set("throwaway", true);
     dict.Set("idleMinutes", static_cast<int>(entry.idle_timeout.InMinutes()));
@@ -216,6 +223,26 @@ base::DictValue DescribeAgent(const ToolContext& context,
 bool GetIdentity(const base::DictValue& args,
                  ProfileRegistry::Identity* identity,
                  std::string* error) {
+  if (const base::Value* extensions = args.Find("extensions")) {
+    if (!extensions->is_dict() || extensions->GetDict().size() > 100) {
+      *error =
+          "extensions must be an object of extension IDs and booleans (max "
+          "100)";
+      return false;
+    }
+    identity->extensions.emplace();
+    for (auto [id, enabled] : extensions->GetDict()) {
+      if (id.size() != 32 ||
+          !std::ranges::all_of(id,
+                               [](char c) { return c >= 'a' && c <= 'p'; }) ||
+          !enabled.is_bool()) {
+        *error =
+            "extensions must map 32-character extension IDs (a-p) to booleans";
+        return false;
+      }
+      (*identity->extensions)[id] = enabled.GetBool();
+    }
+  }
   if (const std::string* name = args.FindString("name")) {
     *error = ProfileRegistry::CheckName(*name);
     if (!error->empty()) {
@@ -487,6 +514,15 @@ void UpdateAgent(const ToolContext& context,
     return;
   }
   context.service->sessions().RefreshGroups(*id);
+  if (identity.extensions) {
+    for (const auto* session : context.service->sessions().List()) {
+      if (session->agent == *id) {
+        for (auto* contents : context.service->sessions().TabsOf(session->id)) {
+          contents->OnWebPreferencesChanged();
+        }
+      }
+    }
+  }
   std::move(callback).Run(ToolResult::Json(
       base::Value(DescribeAgent(context, *context.service->profiles().Get(*id),
                                 args.FindBool("avatarData").value_or(false)))));
@@ -962,6 +998,7 @@ constexpr char kCreateAgentArgs[] = R"({"type":"object","properties":{
   "color":{"type":"string","enum":["grey","blue","red","yellow","green","pink","purple","cyan","orange"],"description":"Color of the agent's tabs (default: picked from the id)."},
   "avatar":{"type":"string","description":"Optional image: https: or data:image/ URL (max 256 KB); empty removes it."},
   "keep":{"type":"boolean","description":"Never delete this agent in bulk (delete-idle-agents, the cleanup on chrome://agents). Set it on agents that hold a real login."},
+  "extensions":{"type":"object","additionalProperties":{"type":"boolean"},"description":"Per-extension overrides keyed by extension ID. Merged on update. 1Password (aeblfdkhhhdcdjpifhhbdiojplfjncoa) defaults off for agents. Other extensions default on. Reload or navigate existing tabs after changing this; code already in a document cannot be removed."},
   "persistSessionCookies":{"type":"boolean","description":"Keep session cookies (no expiry) across browser restarts, like Chrome's \"Continue where you left off\" (default true). A change applies at the next browser start."}}})";
 
 constexpr char kUpdateAgentArgs[] = R"({"type":"object","properties":{
@@ -970,6 +1007,7 @@ constexpr char kUpdateAgentArgs[] = R"({"type":"object","properties":{
   "color":{"type":"string","enum":["grey","blue","red","yellow","green","pink","purple","cyan","orange"],"description":"Color of the agent's tabs (default: picked from the id)."},
   "avatar":{"type":"string","description":"Optional image: https: or data:image/ URL (max 256 KB); empty removes it."},
   "keep":{"type":"boolean","description":"Never delete this agent in bulk (delete-idle-agents, the cleanup on chrome://agents). Set it on agents that hold a real login."},
+  "extensions":{"type":"object","additionalProperties":{"type":"boolean"},"description":"Per-extension overrides keyed by extension ID. Merged on update. 1Password (aeblfdkhhhdcdjpifhhbdiojplfjncoa) defaults off for agents. Other extensions default on. Reload or navigate existing tabs after changing this; code already in a document cannot be removed."},
   "persistSessionCookies":{"type":"boolean","description":"Keep session cookies (no expiry) across browser restarts, like Chrome's \"Continue where you left off\" (default true). A change applies at the next browser start."},
   "idleMinutes":{"type":"integer","description":"Throwaway agents only: delete after this many minutes without activity (1-1440)."}},
   "required":["id"]})";
@@ -1040,7 +1078,8 @@ constexpr Tool kTools[] = {
      kCreateAgentArgs, &CreateAgent},
     {"update-agent",
      "Change an agent's name, color or avatar; its open tabs follow. "
-     "persistSessionCookies applies at the next browser start.",
+     "persistSessionCookies applies at the next browser start. extensions "
+     "changes require a fresh navigation to remove existing injected code.",
      kUpdateAgentArgs, &UpdateAgent},
     {"delete-agent",
      "Close the agent's sessions and tabs and wipe its storage.", kAgentIdArgs,

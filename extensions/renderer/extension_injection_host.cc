@@ -4,6 +4,8 @@
 
 #include "extensions/renderer/extension_injection_host.h"
 
+#include <algorithm>
+
 #include "content/public/renderer/render_frame.h"
 #include "extensions/common/constants.h"
 #include "extensions/common/extension_id.h"
@@ -12,8 +14,10 @@
 #include "extensions/renderer/extension_web_view_helper.h"
 #include "extensions/renderer/renderer_extension_registry.h"
 #include "pdf/buildflags.h"
+#include "third_party/blink/public/common/web_preferences/web_preferences.h"
 #include "third_party/blink/public/web/web_document.h"
 #include "third_party/blink/public/web/web_local_frame.h"
+#include "third_party/blink/public/web/web_view.h"
 
 #if BUILDFLAG(ENABLE_PDF)
 #include "components/pdf/common/pdf_util.h"  // nogncheck
@@ -59,6 +63,11 @@ PermissionsData::PageAccess ExtensionInjectionHost::CanExecuteOnFrame(
     int tab_id,
     bool is_declarative) const {
   blink::WebLocalFrame* web_local_frame = render_frame->GetWebFrame();
+  const auto& blocked =
+      web_local_frame->View()->GetWebPreferences().shuttle_blocked_extensions;
+  if (std::ranges::contains(blocked, extension_->id())) {
+    return PermissionsData::PageAccess::kDenied;
+  }
 
 #if BUILDFLAG(ENABLE_PDF)
   // Block executing scripts in the PDF content frame. The parent frame should

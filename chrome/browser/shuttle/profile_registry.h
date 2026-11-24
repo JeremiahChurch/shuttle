@@ -74,6 +74,9 @@ class ProfileRegistry {
     // Persistent agents: never removed by delete-idle-agents or the bulk
     // cleanup on chrome://agents (for agents that hold a real login).
     bool keep = false;
+    // Explicit per-extension overrides. 1Password is off unless granted;
+    // other extensions retain their profile-wide behavior unless overridden.
+    std::map<std::string, bool> extensions;
   };
 
   // Fields to set; unset fields are left as they are.
@@ -91,6 +94,8 @@ class ProfileRegistry {
     std::optional<base::TimeDelta> idle_timeout;
     // Persistent agents only.
     std::optional<bool> keep;
+    // Merge these overrides into the existing settings.
+    std::optional<std::map<std::string, bool>> extensions;
   };
 
   // Id prefix reserved for throwaway agents.
@@ -127,6 +132,7 @@ class ProfileRegistry {
   bool Exists(const std::string& id) const;
   std::optional<Entry> Get(const std::string& id) const;
   std::vector<Entry> List() const;
+  std::vector<std::string> BlockedExtensions(const std::string& id) const;
 
   // Returns false if the profile already exists. Fields must be valid.
   bool Create(const std::string& id, const Identity& identity);

@@ -50,6 +50,7 @@ export interface EditState {
   color: string;
   avatar: string;
   persistSessionCookies: boolean;
+  onePassword: boolean;
   // Throwaway agents have no avatar and keep nothing on disk.
   throwaway: boolean;
   keep: boolean;
@@ -474,6 +475,7 @@ export class AgentsAppElement extends CrLitElement {
       color,
       avatar: '',
       persistSessionCookies: true,
+      onePassword: false,
       throwaway: false,
       keep: false,
     });
@@ -495,6 +497,7 @@ export class AgentsAppElement extends CrLitElement {
         color: agent.color,
         avatar: agent.avatar || '',
         persistSessionCookies: agent.persistSessionCookies !== false,
+        onePassword: agent.extensions?.['aeblfdkhhhdcdjpifhhbdiojplfjncoa'] === true,
         throwaway: !!agent.throwaway,
         keep: !!agent.keep,
       });
@@ -610,6 +613,12 @@ export class AgentsAppElement extends CrLitElement {
     }
   }
 
+  protected onOnePasswordChange_(e: CustomEvent<boolean>) {
+    if (this.edit_) {
+      this.edit_ = {...this.edit_, onePassword: e.detail};
+    }
+  }
+
   protected onKeepChange_(e: CustomEvent<boolean>) {
     if (this.edit_) {
       this.edit_ = {...this.edit_, keep: e.detail};
@@ -647,6 +656,7 @@ export class AgentsAppElement extends CrLitElement {
       avatar: edit.avatar.trim(),
       persistSessionCookies: edit.persistSessionCookies,
       keep: edit.keep,
+      extensions: {'aeblfdkhhhdcdjpifhhbdiojplfjncoa': edit.onePassword},
     };
     if (edit.throwaway) {
       delete identity.avatar;

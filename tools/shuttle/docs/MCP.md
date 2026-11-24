@@ -195,3 +195,30 @@ sort by name / last active / memory / CPU (toolbar, next to search), "Clean up" 
 - `outerWidth/outerHeight` report the window, not the resized tab viewport (detectable mismatch).
 - Empty sessions (all tabs closed by hand) stay open until `close-session` or the idle timeout.
 - Fidelity mitigations (`Runtime.enable` suppression) and remote takeover/screencast: not in the browser.
+
+## Extension access in agent tabs
+
+`create-agent` and `update-agent` accept `extensions`, an object mapping an
+extension ID to a boolean. Updates merge the supplied entries. `list-agents`
+returns the effective settings. The 1Password extension
+(`aeblfdkhhhdcdjpifhhbdiojplfjncoa`) is off by default for every agent, including
+agents created before this setting existed. Other extensions keep the profile's
+behavior unless explicitly turned off. Ordinary user tabs are unchanged.
+
+For example, a credential broker can grant an agent 1Password with
+`update-agent {"id":"agent-example","extensions":{"aeblfdkhhhdcdjpifhhbdiojplfjncoa":true}}`.
+Set the value to `false` to revoke it. `chrome://agents` exposes the same setting
+in the agent editor. Granting the extension exposes everything its unlocked
+account can access; this switch does not select vaults.
+
+The browser sends this policy with the view's creation settings, before
+`document_start`. The renderer checks manifest and programmatic injection,
+including main-world scripts and descendant frames. Existing code cannot be
+removed from a document: navigate or reload existing tabs after changing the
+setting. The API reports `extensionChangesRequireNavigation: true` to make this
+requirement visible. The browser does not silently reload pages.
+
+An extension cannot prevent another extension's scripts from loading. A broker
+such as vaultwire calls these browser tools before opening or navigating its
+agent tab, then uses the agent's session endpoint for authentication.
+

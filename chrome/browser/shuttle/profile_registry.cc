@@ -30,9 +30,9 @@
 #include "base/task/sequenced_task_runner.h"
 #include "base/task/thread_pool.h"
 #include "base/values.h"
+#include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/shuttle/agent_partition.h"
 #include "chrome/browser/shuttle/pref_names.h"
-#include "chrome/browser/profiles/profile.h"
 #include "components/pref_registry/pref_registry_syncable.h"
 #include "components/prefs/pref_service.h"
 #include "components/prefs/scoped_user_pref_update.h"
@@ -54,6 +54,8 @@ constexpr char kAvatar[] = "avatar";
 constexpr char kCreated[] = "created";
 constexpr char kLastActive[] = "last_active";
 constexpr char kKeep[] = "keep";
+constexpr char kExtensions[] = "extensions";
+constexpr char kOnePassword[] = "aeblfdkhhhdcdjpifhhbdiojplfjncoa";
 
 // Indexed by TabGroupColorId.
 constexpr std::array<std::string_view, 9> kColorNames = {
@@ -75,6 +77,11 @@ tab_groups::TabGroupColorId DefaultColor(const std::string& id) {
 
 void ApplyIdentity(base::DictValue& dict,
                    const ProfileRegistry::Identity& identity) {
+  if (identity.extensions) {
+    for (const auto& [id, enabled] : *identity.extensions) {
+      dict.EnsureDict(kExtensions)->Set(id, enabled);
+    }
+  }
   if (identity.name) {
     dict.Set(kName, *identity.name);
   }
@@ -468,6 +475,13 @@ std::optional<ProfileRegistry::Entry> ProfileRegistry::Get(
           base::ValueToTime(*last_active).value_or(base::Time());
     }
     entry.keep = dict->FindBool(kKeep).value_or(false);
+    if (const base::DictValue* extensions = dict->FindDict(kExtensions)) {
+      for (auto [extension, enabled] : *extensions) {
+        if (enabled.is_bool()) {
+          entry.extensions[extension] = enabled.GetBool();
+        }
+      }
+    }
   }
   return entry;
 }
@@ -483,6 +497,23 @@ std::vector<ProfileRegistry::Entry> ProfileRegistry::List() const {
     entries.push_back(throwaway.entry);
   }
   return entries;
+}
+
+std::vector<std::string> ProfileRegistry::BlockedExtensions(
+    const std::string& id) const {
+  std::map<std::string, bool> settings{{kOnePassword, false}};
+  if (auto entry = Get(id)) {
+    for (const auto& [extension, enabled] : entry->extensions) {
+      settings[extension] = enabled;
+    }
+  }
+  std::vector<std::string> blocked;
+  for (const auto& [extension, enabled] : settings) {
+    if (!enabled) {
+      blocked.push_back(extension);
+    }
+  }
+  return blocked;
 }
 
 bool ProfileRegistry::Create(const std::string& id, const Identity& identity) {
@@ -517,6 +548,8 @@ std::string ProfileRegistry::CreateThrowaway(const Identity& identity) {
   throwaway.entry.created = base::Time::Now();
   throwaway.entry.persist_session_cookies = false;
   throwaway.entry.throwaway = true;
+  throwaway.entry.extensions =
+      identity.extensions.value_or(std::map<std::string, bool>());
   throwaway.entry.idle_timeout =
       identity.idle_timeout.value_or(kDefaultThrowawayIdleTimeout);
   throwaway.last_active = base::TimeTicks::Now();
@@ -570,6 +603,11 @@ bool ProfileRegistry::Update(const std::string& id, const Identity& identity) {
   if (auto it = throwaway_.find(id); it != throwaway_.end()) {
     DCHECK(!identity.avatar && !identity.persist_session_cookies);
     Entry& entry = it->second.entry;
+    if (identity.extensions) {
+      for (const auto& [extension, enabled] : *identity.extensions) {
+        entry.extensions[extension] = enabled;
+      }
+    }
     if (identity.name) {
       entry.name = identity.name->empty() ? id : *identity.name;
     }

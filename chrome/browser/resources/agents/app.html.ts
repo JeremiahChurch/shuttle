@@ -212,6 +212,17 @@ ${this.loaded_ && this.agents_.length ? html`
             aria-checked="${color === this.edit_?.color}"
             @click="${this.onColorClick_}"></button>`)}
     </div>
+    <div class="toggle-row">
+      <div class="text">
+        <div id="onePasswordLabel">Allow 1Password in this agent's tabs</div>
+        <div class="secondary">The unlocked extension can use every vault
+            available to it. Reload open tabs after changing this.</div>
+      </div>
+      <cr-toggle id="onePasswordToggle" aria-labelledby="onePasswordLabel"
+          ?checked="${this.edit_?.onePassword ?? false}"
+          @change="${this.onOnePasswordChange_}">
+      </cr-toggle>
+    </div>
     ${!this.edit_?.throwaway ? html`
     <div class="field-label">Avatar</div>
     <div class="avatar-row">

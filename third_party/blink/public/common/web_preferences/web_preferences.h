@@ -43,6 +43,9 @@ BLINK_COMMON_EXPORT extern const char kCommonScript[];
 // browser/profiles/profile.cc, and
 // content/public/common/common_param_traits_macros.h
 struct BLINK_COMMON_EXPORT WebPreferences {
+  // Browser-owned extension injection policy, present before document_start
+  // and shared by all frames in the view, including initial empty documents.
+  std::vector<std::string> shuttle_blocked_extensions;
 #if BUILDFLAG(IS_ANDROID) || BUILDFLAG(IS_IOS)
   static constexpr float kDefaultMinimumPageScaleFactor = 0.25f;
   static constexpr bool kShrinksViewportContentsToFit = true;
