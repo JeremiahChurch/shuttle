@@ -221,4 +221,3 @@ requirement visible. The browser does not silently reload pages.
 An extension cannot prevent another extension's scripts from loading. A broker
 such as vaultwire calls these browser tools before opening or navigating its
 agent tab, then uses the agent's session endpoint for authentication.
-

@@ -1286,3 +1286,21 @@ this fork. Verify with session CDP on a separate test browser: hidden-tab
 registration, export and restore the throwaway credential into a new virtual
 authenticator, then sign in; also check rejection without `WebAuthn.enable`,
 from a different tab, and after `WebAuthn.disable`. No extension policy changes.
+
+## Extension access per agent and extension-created tabs
+
+Nothing removed. Agent identities accept extension overrides; 1Password defaults
+off for agents. WebPreferences carry the blocked IDs before renderer creation,
+and ExtensionInjectionHost rejects manifest and programmatic injection in every
+frame. The agent editor and MCP expose the setting. Fresh navigation is required
+to remove scripts already installed in a document.
+
+Browser-created tabs destined for an agent group are leased in its fixed storage
+partition before navigation. Fallback adoption retains the pending URL. After a
+DevTools auto-attach pause, the first request recomputes browser identity hints
+before network dispatch. Verify with scripts/check-agent-tabs.mjs and its
+synthetic extension; supply SHUTTLE_UA_KEEPER for first-request identity checks.
+
+Tab restore remains designed only in AGENT-TAB-RESTORE.md. Persisted identities
+and cookies do not preserve session leases, and ordinary Chromium restore does
+not recreate agent storage ownership.
