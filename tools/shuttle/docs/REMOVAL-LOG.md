@@ -1304,3 +1304,22 @@ synthetic extension; supply SHUTTLE_UA_KEEPER for first-request identity checks.
 Tab restore remains designed only in AGENT-TAB-RESTORE.md. Persisted identities
 and cookies do not preserve session leases, and ordinary Chromium restore does
 not recreate agent storage ownership.
+
+## Agent identity on popup and app windows
+
+Nothing removed. The popup location bar shows a read-only chip using the actual
+storage partition's agent name and tab group color. Popup and app window titles
+include the agent name before Shuttle. Agent app windows and trusted popups keep
+a location bar so the identity cannot disappear with the usual app chrome.
+Moving an agent tab into an app popup keeps its lease and cookie partition;
+the ungroup observer no longer interprets that move as taking the tab back.
+Registry edits update existing popup labels and titles. Ordinary windows keep
+their existing appearance. Page content cannot edit the browser's label.
+
+Verify with scripts/check-popup-agent-label.mjs on a dedicated X11 display. It
+uses local pages and a disposable browser to check opener cookies, redirect,
+noopener, blank and nested popups, session CDP-created tabs, trusted windows,
+narrow windows, live identity edits and ordinary profile popups. It records
+native window titles and captures the browser chrome, including chip colors.
+Chromium browser-test targets remain pruned; this is a runtime browser probe in
+the style of scripts/check-agent-tabs.mjs.

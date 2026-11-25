@@ -42,3 +42,8 @@ Own code lives in `chrome/browser/shuttle/` (MCP server, sessions, agents, page 
 | 55 | CDP `Target.closeTarget` / `Page.close` on the home tab reply an error (no false success); Shuttle icon on `chrome://agents` | `5eab0d8236` | 5: devtools inspector_protocol_config.json, protocol target_handler + page_handler, chrome_web_ui_controller_factory.cc + webui BUILD.gn | smoke-home-tab (2, 5b, 7); icon seen by Toby | REMOVAL-LOG |
 | 56 | Session lifetime: CDP-created tabs close with their connection; idle timeout (30 min default, `--shuttle-session-idle-timeout`), `update-session`, `open-session` warning | `1a8b1958bd` | 0: own code in `chrome/browser/shuttle/` only | smoke-tab-guards; sidecar restart checked by hand | REMOVAL-LOG |
 | 59 | Throwaway agents: `create-agent { throwaway: true, idleMinutes? }`, in-memory storage, deleted after `idleMinutes` idle (default 15) with their tabs and save-text files, cap 50 (`--shuttle-max-throwaway-agents`), "Temporary" chip on `chrome://agents` | (pending) | 0: own code in `chrome/browser/shuttle/` and `resources/agents/`; `agent_partition.cc` (used by chrome_content_browser_client, browser_navigator) accepts in-memory `shuttle-tmp-` partitions | smoke-throwaway | REMOVAL-LOG, MCP.md |
+
+Popup and app windows identify their agent with a read-only location bar chip
+and native window title. The label follows the cookie partition and uses the
+tab group's color. `scripts/check-popup-agent-label.mjs` checks the behavior on
+a dedicated X11 display with a disposable browser and neutral local pages.

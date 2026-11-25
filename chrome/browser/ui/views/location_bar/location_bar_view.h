@@ -523,6 +523,9 @@ class LocationBarView
 
   // An icon to the left of the edit field: the HTTPS lock, blank page icon,
   // search icon, EV HTTPS bubble, etc.
+  void RefreshAgentChip();
+  raw_ptr<views::Label> agent_chip_ = nullptr;
+
   raw_ptr<LocationIconView> location_icon_view_ = nullptr;
 
   // Views to show inline autocompletion when an IME is active.  In this case,

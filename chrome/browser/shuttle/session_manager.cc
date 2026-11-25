@@ -10,30 +10,31 @@
 
 #include "base/auto_reset.h"
 #include "base/command_line.h"
-#include "base/logging.h"
-#include "base/functional/bind.h"
 #include "base/containers/span.h"
+#include "base/functional/bind.h"
 #include "base/functional/callback_helpers.h"
 #include "base/json/json_writer.h"
+#include "base/logging.h"
 #include "base/rand_util.h"
 #include "base/scoped_observation.h"
-#include "base/types/expected_macros.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/utf_string_conversions.h"
 #include "base/task/single_thread_task_runner.h"
+#include "base/types/expected_macros.h"
 #include "base/values.h"
 #include "chrome/browser/headless/headless_mode_util.h"
 #include "chrome/browser/lifetime/browser_shutdown.h"
-#include "chrome/browser/shuttle/home_tab_manager.h"
-#include "chrome/browser/shuttle/profile_registry.h"
-#include "chrome/browser/shuttle/switches.h"
 #include "chrome/browser/profiles/keep_alive/profile_keep_alive_types.h"
 #include "chrome/browser/profiles/keep_alive/scoped_profile_keep_alive.h"
 #include "chrome/browser/profiles/profile.h"
+#include "chrome/browser/shuttle/home_tab_manager.h"
+#include "chrome/browser/shuttle/profile_registry.h"
+#include "chrome/browser/shuttle/switches.h"
+#include "chrome/browser/ui/browser_window.h"
 #include "chrome/browser/ui/browser_window/public/browser_collection_observer.h"
 #include "chrome/browser/ui/browser_window/public/browser_window_interface.h"
-#include "chrome/browser/ui/browser_window/public/global_browser_collection.h"
 #include "chrome/browser/ui/browser_window/public/browser_window_interface_iterator.h"
+#include "chrome/browser/ui/browser_window/public/global_browser_collection.h"
 #include "chrome/browser/ui/navigator/browser_navigator.h"
 #include "chrome/browser/ui/navigator/browser_navigator_params.h"
 #include "chrome/browser/ui/tabs/tab_enums.h"
@@ -192,6 +193,7 @@ WEB_CONTENTS_USER_DATA_KEY_IMPL(AgentTabLease);
 struct TabLocation {
   raw_ptr<TabStripModel> tab_strip = nullptr;
   int index = TabStripModel::kNoTab;
+  raw_ptr<BrowserWindowInterface> browser = nullptr;
 };
 
 // A tab dragged out of an agent's group: how long to wait for the drag to
@@ -207,7 +209,7 @@ TabLocation FindInTabStrips(content::WebContents* contents) {
     }
     int index = tab_strip->GetIndexOfWebContents(contents);
     if (index != TabStripModel::kNoTab) {
-      return {tab_strip, index};
+      return {tab_strip, index, browser};
     }
   }
   return {};
@@ -819,8 +821,9 @@ void SessionManager::AddToSessionGroup(
   }
   const std::string& agent_id = it->second.agent;
   TabLocation location = FindInTabStrips(contents.get());
-  if (!location.tab_strip) {
-    return;
+  if (!location.tab_strip ||
+      location.browser->GetType() != BrowserWindowInterface::Type::TYPE_NORMAL) {
+    return;  // Popup/app chrome identifies the agent without a tab group.
   }
   TabStripModel* tab_strip = location.tab_strip;
   Observe(tab_strip);
@@ -882,6 +885,22 @@ void SessionManager::RefreshGroups(const std::string& agent_id) {
     // Also unchanged visuals: the avatar may have changed, and this repaints
     // the group's header.
     tab_strip->ChangeTabGroupVisuals(group, visuals);
+  }
+  for (auto* browser : GetAllBrowserWindowInterfaces()) {
+    if (browser->GetProfile() != profile_) {
+      continue;
+    }
+    auto* contents = browser->GetTabStripModel()->GetActiveWebContents();
+    if (contents &&
+        ProfileRegistry::IdForConfig(
+            profile_
+                ->GetStoragePartition(
+                    contents->GetPrimaryMainFrame()->GetSiteInstance())
+                ->GetConfig()) == agent_id) {
+      auto* window = BrowserWindow::FromBrowser(browser);
+      window->UpdateToolbar(contents);
+      window->UpdateTitleBar();
+    }
   }
 }
 
@@ -965,6 +984,11 @@ void SessionManager::TakeBackIfUngrouped(
     return;  // Closed, or already taken back.
   }
   TabLocation location = FindInTabStrips(contents.get());
+  if (location.browser &&
+      location.browser->GetType() != BrowserWindowInterface::Type::TYPE_NORMAL) {
+    // Moving to a window without a tab strip is not a request to change jars.
+    return;
+  }
   bool dragging = !location.tab_strip ||
                   (location.tab_strip->delegate() &&
                    !location.tab_strip->delegate()->IsTabStripEditable());
